@@ -1,0 +1,201 @@
+<?php
+    echo '1. Реализовать построение и обход дерева для математического выражения';
+
+class Calculator
+{
+    private Tree $tree;
+
+    public static ?array $params = null;
+
+    public function insert(string $expression) : void
+    {
+        $this->tree = (new TreeBuilder($expression))->getTree();
+    }
+
+    public function getResult(array $params = null) : float
+    {
+        if ($params) self::$params = $params;
+        return $this->tree->compute();
+    }
+}
+
+class TreeBuilder
+{
+    private array $stuff;
+
+    private int $leftEdge;
+    private int $rightEdge;
+
+    public function __construct(string $expression)
+    {
+        $this->stuff = $this->formatIt($expression);
+        $this->leftEdge = 0;
+        $this->rightEdge = count($this->stuff) - 1;
+    }
+
+    public function getTree() : Tree
+    {
+        return $this->buildTree($this->leftEdge, $this->rightEdge);
+    }
+
+    private function buildTree(int $leftEdge, int $rightEdge) : Tree
+    {
+        if ($this->stuff[$leftEdge] === '(' && $this->stuff[$rightEdge] === ')') {
+            ++$leftEdge;
+            --$rightEdge;
+        }
+
+        if ($leftEdge === $rightEdge) return new TreeLeaf($this->stuff[$rightEdge]);
+
+        $lowestPriorityItem = [];
+
+        for ($i = $rightEdge; $i > $leftEdge; $i--) {
+
+            if ($this->stuff[$i] === ')') {
+                for ($j = $leftEdge; $j < $rightEdge; $j++) {
+
+                    if ($this->stuff[$j] === '(') {
+                        $treeNode = new TreeNode($this->stuff[$lowestPriorityItem['index']]);
+                        $treeNode->right = $this->buildTree($lowestPriorityItem['index'] + 1, $rightEdge);
+                        $treeNode->left = $this->buildTree($leftEdge, $lowestPriorityItem['index'] - 1);
+                        return $treeNode;
+                    }
+
+                    if (Lib::isOperator($this->stuff[$j])) {
+                        if (
+                            empty($lowestPriorityItem)
+                            || $lowestPriorityItem['priority'] >= Lib::getPriority($this->stuff[$j])
+                        ) {
+                            $lowestPriorityItem['index'] = $j;
+                            $lowestPriorityItem['priority'] = Lib::getPriority($this->stuff[$j]);
+                        }
+                    }
+                }
+            }
+
+            if (Lib::isOperator($this->stuff[$i])) {
+                if (
+                    empty($lowestPriorityItem)
+                    || $lowestPriorityItem['priority'] > Lib::getPriority($this->stuff[$i])
+                ) {
+                    $lowestPriorityItem['index'] = $i;
+                    $lowestPriorityItem['priority'] = Lib::getPriority($this->stuff[$i]);
+                }
+            }
+        }
+
+        $treeNode = new TreeNode($this->stuff[$lowestPriorityItem['index']]);
+        $treeNode->right = $this->buildTree($lowestPriorityItem['index'] + 1, $rightEdge);
+        $treeNode->left = $this->buildTree($leftEdge, $lowestPriorityItem['index'] - 1);
+        return $treeNode;
+    }
+
+    private function formatIt(string $expression) : array
+    {
+        $expression = str_split(str_replace(' ', '', $expression));
+        $str = '';
+        for ($i = 0; $i < count($expression); $i++) {
+            if (is_numeric($expression[$i]) || $expression[$i] === '.') {
+                while (is_numeric($expression[$i]) || $expression[$i] === '.') {
+                    $str .= $expression[$i++];
+                }
+                $i--;
+                $str .= ' ';
+            } else {
+                $str .= $expression[$i] . ' ';
+            }
+        }
+        return preg_split("/ /", $str, -1, PREG_SPLIT_NO_EMPTY);
+    }
+}
+
+abstract class Tree
+{
+    public string $value;
+
+    abstract public function compute();
+}
+
+
+class TreeNode extends Tree
+{
+    public Tree $left;
+    public Tree $right;
+
+    public function __construct(string $value)
+    {
+        $this->value = $value;
+    }
+
+    public function compute() : float
+    {
+        switch ($this->value) {
+            case '+':
+                return $this->left->compute() + $this->right->compute();
+            case '-':
+                return $this->left->compute() - $this->right->compute();
+            case '*':
+                return $this->left->compute() * $this->right->compute();
+            case '/':
+                return $this->left->compute() / $this->right->compute();
+            case '^':
+                return $this->left->compute() ** $this->right->compute();
+        }
+        return null;
+    }
+}
+
+class TreeLeaf extends Tree
+{
+    public function __construct(string $value)
+    {
+        $this->value = $value;
+    }
+
+    public function compute() : float
+    {
+        if (!is_numeric($this->value)) {
+            return (float) Calculator::$params[$this->value];
+        }
+        return (float) $this->value;
+    }
+}
+
+class Lib
+{
+    public static array $operators = ['+', '-', '*', '/', '^'];
+    public static array $priorities = [
+        '+' => 1,
+        '-' => 1,
+        '*' => 2,
+        '/' => 2,
+        '^' => 3,
+    ];
+
+    public static function isOperator(string $item) : bool
+    {
+        return in_array($item, static::$operators);
+    }
+
+    public static function getPriority(string $item) : int
+    {
+        return static::$priorities[$item];
+    }
+}
+
+$calc = new Calculator();
+$calc->insert('(x+42)^2+7*y-z');
+echo '<br>' . 'Выражение: ' . '(x + 42)^2 + 7 * y - z';
+echo '<br>' . 'Результат: ';
+print_r($calc->getResult(['x' => 1, 'y' => 2, 'z' => 3]));
+echo '<hr>';
+
+echo '2. Рассмотреть подход прямой и обратной польских нотаций. Чем они лучше деревьев в первой задаче? Нужны ли деревья в их реализации?';
+echo '<br>' . 'Польская нотация:' . '<br>' . 'выражение a+b выглядит в прямой как +ab и в обратной ab+. Так же она
+позволяет избежать скобок (a+b)*c выглядит как *+abc. Использование польской нотации плохо тем, что операторы обладают
+свойством приоритета и ассоциативности, из-за этогоопределение функции инфикса становится нетривиальной задачей.
+Она хороша при работе с разными выражениями, в противном случае потребуется слишком большой стек.' ;
+
+echo '<br>' . 'Деревья:' . '<br>' . 'Деревью подходят в тех случаях, когда нужно организовать хранение данных для
+последующего обращения к ним, то есть если есть много переменных, например для интернет магазина,
+где обращение к каталогу может быть многократным чтобы найти определенный товар.';
